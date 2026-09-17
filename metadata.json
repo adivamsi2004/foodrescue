@@ -1,0 +1,6 @@
+{
+  "name": "FOODRESCUE",
+  "description": "Good Food Shouldn't Go to Waste. A real-time food surplus redistribution platform connecting providers with verified NGOs and volunteers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

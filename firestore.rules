@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isRole(role) {
+      return isAuthenticated() && getUserData().role == role && getUserData().isActive == true;
+    }
+
+    function isAdmin() {
+      return isRole('ADMIN');
+    }
+
+    function isApprovedNGO() {
+      return isRole('NGO') && getUserData().verificationStatus == 'APPROVED';
+    }
+
+    function isProvider() {
+      return isRole('PROVIDER');
+    }
+
+    function isVolunteer() {
+      return isRole('VOLUNTEER');
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ORGANIZATIONS COLLECTION
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && (request.resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // DONATIONS COLLECTION
+    match /donations/{donationId} {
+      allow read: if isAuthenticated();
+      allow create: if isProvider() || isAdmin();
+      allow update: if isAuthenticated() && (
+        // Provider of this donation
+        resource.data.providerId == request.auth.uid ||
+        // Approved NGO claiming it
+        (isApprovedNGO() && request.resource.data.status in ['CLAIM_REQUESTED', 'CLAIMED', 'PICKUP_SCHEDULED']) ||
+        // Volunteer managing pickup tasks
+        (isVolunteer() && request.resource.data.status in ['PICKED_UP', 'DELIVERED', 'COMPLETED']) ||
+        // Admin overrides
+        isAdmin()
+      );
+      allow delete: if isAdmin() || (isProvider() && resource.data.providerId == request.auth.uid && resource.data.status == 'DRAFT');
+    }
+
+    // CLAIMS COLLECTION
+    match /claims/{claimId} {
+      allow read: if isAuthenticated();
+      allow create: if isApprovedNGO() || isVolunteer() || isAdmin();
+      allow update: if isAuthenticated() && (resource.data.claimantId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // NOTIFICATIONS COLLECTION
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated(); // Anyone can trigger system notifications
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // REPORTS COLLECTION
+    match /reports/{reportId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.reportedBy == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // CONTACT MESSAGES COLLECTION
+    match /contactMessages/{messageId} {
+      allow read: if isAdmin();
+      allow create: if true; // Public contact form
+      allow update, delete: if isAdmin();
+    }
+  }
+}
